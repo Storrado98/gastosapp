@@ -1,4 +1,4 @@
-// ===== Utiles de cifrado con Web Crypto (AES-GCM + PBKDF2) =====
+// ========= CIFRADO =========
 async function deriveKey(pin, salt){
   const enc = new TextEncoder();
   const keyMaterial = await crypto.subtle.importKey("raw", enc.encode(pin), "PBKDF2", false, ["deriveKey"]);
@@ -26,11 +26,12 @@ async function decryptJson(pack, pin){
   return JSON.parse(new TextDecoder().decode(buf));
 }
 
-// ===== Estado persistente (vault cifrado en localStorage) =====
-const LS_KEY = "gastosapp_vault";
-const defaultState = () => ({
-  meta: {createdAt: new Date().toISOString(), version: 2},
-  user: {id: "", pinSet: false},
+// ========= ESTADO =========
+const LAST_USER_KEY = "gastosapp_last_user";
+const vaultKeyFor = (userId) => `gastosapp_vault_${userId}`;
+const defaultState = (userId) => ({
+  meta: {createdAt: new Date().toISOString(), version: 3},
+  user: {id: userId, pinSet: true},
   monedas: [
     {code:"ARS", name:"Pesos", isCrypto:false, rate:1},
     {code:"USD", name:"Dólares", isCrypto:false, rate:null},
@@ -38,24 +39,25 @@ const defaultState = () => ({
     {code:"ETH", name:"Ethereum", isCrypto:true, rate:null},
     {code:"DOGE", name:"Dogecoin", isCrypto:true, rate:null},
   ],
-  cuentas: [], // {id, nombre, tipo, multi, incluyeCaja, moneda, subMonedas[]}
-  movs: []     // {id, fecha, desc, monto, moneda, deb, cred, cat, tag}
+  cuentas: [],
+  movs: []
 });
-let state = defaultState();
+let state = null;
 let currentPin = null;
+let currentUser = null;
 
-// ===== Helpers UI =====
-function $(id){ return document.getElementById(id); }
-function ts(){ return new Date().toISOString().replace(/[:.]/g,"-"); }
-function todayISO(){ const d=new Date(); d.setHours(0,0,0,0); return d.toISOString().slice(0,10); }
+// ========= HELPERS UI =========
+const $ = (id)=>document.getElementById(id);
+const ts = ()=> new Date().toISOString().replace(/[:.]/g,"-");
+const todayISO = ()=>{ const d=new Date(); d.setHours(0,0,0,0); return d.toISOString().slice(0,10); };
 
+// ========= VAULT LOAD/SAVE (por usuario) =========
 async function loadVault(userId, pin){
-  const raw = localStorage.getItem(LS_KEY);
+  const key = vaultKeyFor(userId);
+  const raw = localStorage.getItem(key);
   if(!raw){
-    state = defaultState();
-    state.user.id = userId;
-    state.user.pinSet = true;
-    currentPin = pin;
+    state = defaultState(userId);
+    currentPin = pin; currentUser = userId;
     await saveVault();
     return true;
   }
@@ -63,7 +65,7 @@ async function loadVault(userId, pin){
     const pack = JSON.parse(raw);
     const s = await decryptJson(pack, pin);
     if(s.user.id !== userId) throw new Error("Usuario distinto");
-    state = s; currentPin = pin;
+    state = s; currentPin = pin; currentUser = userId;
     return true;
   }catch(e){
     console.error(e);
@@ -71,72 +73,55 @@ async function loadVault(userId, pin){
   }
 }
 async function saveVault(){
+  const key = vaultKeyFor(currentUser);
   const pack = await encryptJson(state, currentPin);
-  localStorage.setItem(LS_KEY, JSON.stringify(pack));
+  localStorage.setItem(key, JSON.stringify(pack));
+  localStorage.setItem(LAST_USER_KEY, currentUser);
 }
 
-// ===== Render =====
+// ========= RENDER =========
 function renderMonedas(){
-  const list = $("listaMonedas");
-  if(list){
-    list.innerHTML = "";
-    state.monedas.forEach(m=>{
+  const list = $("listaMonedas"); if(list){ list.innerHTML = ""; }
+  state.monedas.forEach(m=>{
+    if(list){
       const el = document.createElement("div");
       el.className = "pill";
       el.textContent = `${m.code} · ${m.name}${m.rate?` · TC:${m.rate}`:""}`;
       list.appendChild(el);
-    });
-  }
-  // llenar selects
-  const sel = $("ctaMoneda");
-  if(sel){
-    sel.innerHTML = "";
-    state.monedas.forEach(m=>{
-      const opt = document.createElement("option");
-      opt.value = m.code; opt.textContent = `${m.code}`;
-      sel.appendChild(opt);
-    });
-  }
-  // selects de movimientos
-  const movMoneda = $("movMoneda");
-  if(movMoneda){
-    movMoneda.innerHTML = "";
-    state.monedas.forEach(m=>{
-      const opt = document.createElement("option");
-      opt.value = m.code; opt.textContent = m.code;
-      movMoneda.appendChild(opt);
-    });
-  }
+    }
+  });
+  // selects
+  const selMonCta = $("ctaMoneda");
+  if(selMonCta){ selMonCta.innerHTML=""; state.monedas.forEach(m=>{ const o=document.createElement("option"); o.value=m.code; o.textContent=m.code; selMonCta.appendChild(o); }); }
+  const selMonMov = $("movMoneda");
+  if(selMonMov){ selMonMov.innerHTML=""; state.monedas.forEach(m=>{ const o=document.createElement("option"); o.value=m.code; o.textContent=m.code; selMonMov.appendChild(o); }); }
 }
 function renderCuentas(){
-  const list = $("listaCuentas");
-  if(list){
-    list.innerHTML = "";
-    state.cuentas.forEach(c=>{
+  const list = $("listaCuentas"); if(list){ list.innerHTML=""; }
+  state.cuentas.forEach(c=>{
+    if(list){
       const el = document.createElement("div");
       el.className = "pill";
-      el.textContent = `${c.nombre} · ${c.tipo} · ${c.multi?"multi: "+c.subMonedas.join(","):c.moneda} · ${c.incluyeCaja?"incluye caja":"no caja"}`;
+      el.textContent = `${c.nombre} · ${c.tipo} · ${c.multi?`multi: ${c.subMonedas.join(",")}`:c.moneda} · ${c.incluyeCaja?"incluye caja":"no caja"}`;
       list.appendChild(el);
-    });
-  }
-  // selects de movimientos
+    }
+  });
+  // selects movimientos
   const deb = $("movDeb"), cred = $("movCred");
   [deb,cred].forEach(sel=>{
-    if(sel){
-      sel.innerHTML = "";
-      state.cuentas.forEach(c=>{
-        const opt = document.createElement("option");
-        opt.value = c.id;
-        opt.textContent = c.nombre + (c.multi? ` (${c.subMonedas.join(",")})` : (c.moneda? ` (${c.moneda})`:""));
-        sel.appendChild(opt);
-      });
-    }
+    if(!sel) return;
+    sel.innerHTML = "";
+    state.cuentas.forEach(c=>{
+      const o = document.createElement("option");
+      o.value = c.id;
+      o.textContent = c.nombre + (c.multi? ` (${c.subMonedas.join(",")})` : (c.moneda? ` (${c.moneda})`:""));
+      sel.appendChild(o);
+    });
   });
 }
 function renderMovs(){
-  const box = $("listaMovs");
-  if(!box) return;
-  if(state.movs.length===0){ box.textContent = "(vacío)"; return; }
+  const box = $("listaMovs"); if(!box) return;
+  if(!state.movs.length){ box.textContent="(vacío)"; return; }
   box.innerHTML = "";
   [...state.movs].slice(-10).reverse().forEach(m=>{
     const div = document.createElement("div");
@@ -151,7 +136,7 @@ function nombreCuenta(id){
   return c? c.nombre : "(?)";
 }
 
-// ===== Actions =====
+// ========= ACCIONES =========
 function addMoneda(){
   const code = $("monCode").value.trim().toUpperCase();
   const name = $("monName").value.trim();
@@ -161,8 +146,7 @@ function addMoneda(){
   if(state.monedas.some(m=>m.code===code)) return alert("Ya existe esa moneda.");
   state.monedas.push({code, name, isCrypto, rate});
   saveVault().then(()=>{ renderMonedas(); });
-  $("monCode").value=""; $("monName").value=""; $("monRate").value="";
-  $("monIsCrypto").value="No";
+  $("monCode").value=""; $("monName").value=""; $("monRate").value=""; $("monIsCrypto").value="No";
 }
 function addCuenta(){
   const nombre = $("ctaNombre").value.trim();
@@ -187,81 +171,58 @@ function addMovimiento(){
   const cred = $("movCred").value;
   const cat = $("movCat").value.trim();
   const tag = $("movTag").value.trim();
-
   if(!desc) return alert("Descripción requerida.");
   if(!monto || monto<=0) return alert("Monto inválido.");
   if(!deb || !cred) return alert("Seleccioná cuentas débito y crédito.");
   if(deb === cred) return alert("Las cuentas no pueden ser iguales.");
-
   state.movs.push({id:`mov_${Date.now()}`, fecha, desc, monto, moneda, deb, cred, cat, tag});
-  saveVault().then(()=>{ 
-    renderMovs();
-    $("movDesc").value=""; $("movMonto").value=""; $("movCat").value=""; $("movTag").value="";
-  });
-}
-async function exportVault(){
-  await saveVault();
-  const blob = new Blob([localStorage.getItem(LS_KEY)], {type:"application/json"});
-  const a = document.createElement("a");
-  const filename = `gastosapp_${ts()}.gastosapp`;
-  a.href = URL.createObjectURL(blob);
-  a.download = filename;
-  a.click();
-  $("exportInfo").textContent = `Exportado: ${filename}`;
-}
-function importVault(){
-  $("fileImport").click();
+  saveVault().then(()=>{ renderMovs(); $("movDesc").value=""; $("movMonto").value=""; $("movCat").value=""; $("movTag").value=""; });
 }
 
-// ===== Auth y wiring =====
+// ========= TABS & WIRING =========
 function switchTab(id){
   ["tab-cuentas","tab-monedas","tab-mov","tab-export"].forEach(t=>{
     const el = document.getElementById(t);
     if(el) el.style.display = (t===id)?"block":"none";
   });
 }
-function wireEvents(){
-  // Tabs
-  document.querySelectorAll("nav button").forEach(b=>{
-    b.addEventListener("click", ()=>switchTab(b.dataset.tab));
-  });
-  // Botones
-  const map = [
-    ["btnAddMoneda", addMoneda],
-    ["btnAddCuenta", addCuenta],
-    ["btnAddMov", addMovimiento],
-    ["btnExport", exportVault],
-    ["btnImport", importVault],
-  ];
-  map.forEach(([id,fn])=>{
-    const el = $(id); if(el) el.onclick = fn;
-  });
-  // Import input
+function wireEventsOnce(){
+  // tabs
+  [["tabBtnCtas","tab-cuentas"],["tabBtnMon","tab-monedas"],["tabBtnMov","tab-mov"],["tabBtnExp","tab-export"]]
+    .forEach(([btn,tab])=>{ const b=$(btn); if(b) b.addEventListener("click", ()=>switchTab(tab)); });
+  // acciones
+  [["btnAddMoneda",addMoneda],["btnAddCuenta",addCuenta],["btnAddMov",addMovimiento],["btnExport",exportVault],["btnImport",importVault]]
+    .forEach(([id,fn])=>{ const el=$(id); if(el) el.addEventListener("click", fn); });
+  // import input
   const fi = $("fileImport");
   if(fi){
     fi.addEventListener("change", async (e)=>{
-      const file = e.target.files[0];
-      if(!file) return;
+      const file = e.target.files[0]; if(!file) return;
       const text = await file.text();
       try{
         const pack = JSON.parse(text);
-        // prueba de descifrado antes de guardar
-        await decryptJson(pack, currentPin);
-        localStorage.setItem(LS_KEY, text);
-        await loadVault(state.user.id, currentPin);
+        await decryptJson(pack, currentPin); // test
+        localStorage.setItem(vaultKeyFor(currentUser), text);
+        await loadVault(currentUser, currentPin);
         renderMonedas(); renderCuentas(); renderMovs();
         alert("Importado OK");
-      }catch(err){
-        console.error(err);
-        alert("No se pudo importar (PIN/archivo incorrecto).");
-      }finally{
-        e.target.value = "";
-      }
+      }catch(err){ console.error(err); alert("No se pudo importar (PIN/archivo incorrecto)."); }
+      finally{ e.target.value=""; }
     });
   }
 }
+async function exportVault(){
+  await saveVault();
+  const blob = new Blob([localStorage.getItem(vaultKeyFor(currentUser))], {type:"application/json"});
+  const a = document.createElement("a");
+  const filename = `gastosapp_${currentUser}_${ts()}.gastosapp`;
+  a.href = URL.createObjectURL(blob); a.download = filename; a.click();
+  const info = $("exportInfo"); if(info) info.textContent = `Exportado: ${filename}`;
+}
+function importVault(){ const f=$("fileImport"); if(f) f.click(); }
 
-$("btnUnlock").onclick = async ()=>{
+// ========= LOGIN =========
+$("btnUnlock").addEventListener("click", async ()=>{
   const uid = $("userId").value.trim();
   const pin = $("pin").value.trim();
   if(!uid || pin.length!==4) return alert("Usuario y PIN (4 dígitos).");
@@ -269,21 +230,20 @@ $("btnUnlock").onclick = async ()=>{
   if(!ok) return alert("PIN o usuario inválido.");
   $("authCard").style.display = "none";
   $("app").style.display = "block";
-
-  // Valores por defecto
   $("movFecha").value = todayISO();
-
-  // Primer render
+  wireEventsOnce();
   renderMonedas(); renderCuentas(); renderMovs();
-  // Wire
-  wireEvents();
-};
-
-$("btnReset").onclick = ()=>{
-  if(confirm("Esto borra todos los datos locales. ¿Continuar?")){
-    localStorage.removeItem(LS_KEY);
-    state = defaultState();
-    alert("Reiniciado. Ingresá nuevamente con Usuario + PIN.");
+});
+$("btnReset").addEventListener("click", ()=>{
+  if(confirm("Esto borra los datos locales del usuario actual. ¿Continuar?")){
+    const uid = $("userId").value.trim();
+    if(uid){ localStorage.removeItem(vaultKeyFor(uid)); }
+    state = null; currentPin=null; currentUser=null;
+    alert("Reiniciado. Volvé a ingresar con Usuario + PIN.");
     location.reload();
   }
-};
+});
+
+// Prefill último usuario
+const last = localStorage.getItem(LAST_USER_KEY);
+if(last){ $("userId").value = last; }
