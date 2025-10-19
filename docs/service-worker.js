@@ -1,4 +1,4 @@
-const CACHE = "gastosapp-v3"; // <— subimos la versión para invalidar cache viejo
+const CACHE = "gastosapp-v4";
 const ASSETS = [
   "./",
   "./index.html",
@@ -15,11 +15,10 @@ self.addEventListener("activate", e=>{
   );
 });
 self.addEventListener("fetch", e=>{
-  const req = e.request;
   e.respondWith(
-    caches.match(req).then(r=> r || fetch(req).then(res=>{
+    caches.match(e.request).then(r=> r || fetch(e.request).then(res=>{
       const copy = res.clone();
-      caches.open(CACHE).then(c=>c.put(req, copy));
+      caches.open(CACHE).then(c=>c.put(e.request, copy));
       return res;
     }).catch(()=>caches.match("./")))
   );
