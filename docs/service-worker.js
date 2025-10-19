@@ -1,8 +1,9 @@
-const CACHE = "gastosapp-v1";
+const CACHE = "gastosapp-v3"; // <— subimos la versión para invalidar cache viejo
 const ASSETS = [
   "./",
   "./index.html",
   "./manifest.webmanifest",
+  "./service-worker.js",
   "./src/app.js"
 ];
 self.addEventListener("install", e=>{
