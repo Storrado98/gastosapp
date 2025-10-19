@@ -25,10 +25,11 @@ async function decryptJson(pack, pin){
   const buf = await crypto.subtle.decrypt({name:"AES-GCM", iv:new Uint8Array(iv)}, key, new Uint8Array(payload));
   return JSON.parse(new TextDecoder().decode(buf));
 }
+
 // ===== Estado persistente (vault cifrado en localStorage) =====
 const LS_KEY = "gastosapp_vault";
 const defaultState = () => ({
-  meta: {createdAt: new Date().toISOString(), version: 1},
+  meta: {createdAt: new Date().toISOString(), version: 2},
   user: {id: "", pinSet: false},
   monedas: [
     {code:"ARS", name:"Pesos", isCrypto:false, rate:1},
@@ -37,13 +38,16 @@ const defaultState = () => ({
     {code:"ETH", name:"Ethereum", isCrypto:true, rate:null},
     {code:"DOGE", name:"Dogecoin", isCrypto:true, rate:null},
   ],
-  cuentas: [] // {id, nombre, tipo, multi, incluyeCaja, moneda, subMonedas[]}
+  cuentas: [], // {id, nombre, tipo, multi, incluyeCaja, moneda, subMonedas[]}
+  movs: []     // {id, fecha, desc, monto, moneda, deb, cred, cat, tag}
 });
 let state = defaultState();
 let currentPin = null;
 
+// ===== Helpers UI =====
 function $(id){ return document.getElementById(id); }
 function ts(){ return new Date().toISOString().replace(/[:.]/g,"-"); }
+function todayISO(){ const d=new Date(); d.setHours(0,0,0,0); return d.toISOString().slice(0,10); }
 
 async function loadVault(userId, pin){
   const raw = localStorage.getItem(LS_KEY);
@@ -71,35 +75,83 @@ async function saveVault(){
   localStorage.setItem(LS_KEY, JSON.stringify(pack));
 }
 
+// ===== Render =====
 function renderMonedas(){
   const list = $("listaMonedas");
-  list.innerHTML = "";
-  state.monedas.forEach(m=>{
-    const el = document.createElement("div");
-    el.className = "pill";
-    el.textContent = `${m.code} · ${m.name}${m.rate?` · TC:${m.rate}`:""}`;
-    list.appendChild(el);
-  });
+  if(list){
+    list.innerHTML = "";
+    state.monedas.forEach(m=>{
+      const el = document.createElement("div");
+      el.className = "pill";
+      el.textContent = `${m.code} · ${m.name}${m.rate?` · TC:${m.rate}`:""}`;
+      list.appendChild(el);
+    });
+  }
   // llenar selects
   const sel = $("ctaMoneda");
-  sel.innerHTML = "";
-  state.monedas.forEach(m=>{
-    const opt = document.createElement("option");
-    opt.value = m.code; opt.textContent = `${m.code}`;
-    sel.appendChild(opt);
-  });
+  if(sel){
+    sel.innerHTML = "";
+    state.monedas.forEach(m=>{
+      const opt = document.createElement("option");
+      opt.value = m.code; opt.textContent = `${m.code}`;
+      sel.appendChild(opt);
+    });
+  }
+  // selects de movimientos
+  const movMoneda = $("movMoneda");
+  if(movMoneda){
+    movMoneda.innerHTML = "";
+    state.monedas.forEach(m=>{
+      const opt = document.createElement("option");
+      opt.value = m.code; opt.textContent = m.code;
+      movMoneda.appendChild(opt);
+    });
+  }
 }
 function renderCuentas(){
   const list = $("listaCuentas");
-  list.innerHTML = "";
-  state.cuentas.forEach(c=>{
-    const el = document.createElement("div");
-    el.className = "pill";
-    el.textContent = `${c.nombre} · ${c.tipo} · ${c.multi?"multi: "+c.subMonedas.join(","):c.moneda} · ${c.incluyeCaja?"incluye caja":"no caja"}`;
-    list.appendChild(el);
+  if(list){
+    list.innerHTML = "";
+    state.cuentas.forEach(c=>{
+      const el = document.createElement("div");
+      el.className = "pill";
+      el.textContent = `${c.nombre} · ${c.tipo} · ${c.multi?"multi: "+c.subMonedas.join(","):c.moneda} · ${c.incluyeCaja?"incluye caja":"no caja"}`;
+      list.appendChild(el);
+    });
+  }
+  // selects de movimientos
+  const deb = $("movDeb"), cred = $("movCred");
+  [deb,cred].forEach(sel=>{
+    if(sel){
+      sel.innerHTML = "";
+      state.cuentas.forEach(c=>{
+        const opt = document.createElement("option");
+        opt.value = c.id;
+        opt.textContent = c.nombre + (c.multi? ` (${c.subMonedas.join(",")})` : (c.moneda? ` (${c.moneda})`:""));
+        sel.appendChild(opt);
+      });
+    }
   });
 }
+function renderMovs(){
+  const box = $("listaMovs");
+  if(!box) return;
+  if(state.movs.length===0){ box.textContent = "(vacío)"; return; }
+  box.innerHTML = "";
+  [...state.movs].slice(-10).reverse().forEach(m=>{
+    const div = document.createElement("div");
+    div.className = "list-item";
+    div.innerHTML = `<div><strong>${m.fecha}</strong> — ${m.desc} — ${m.monto} ${m.moneda}</div>
+    <div class="muted">Débito: ${nombreCuenta(m.deb)} → Crédito: ${nombreCuenta(m.cred)} ${m.cat?` · ${m.cat}`:""} ${m.tag?` · #${m.tag}`:""}</div>`;
+    box.appendChild(div);
+  });
+}
+function nombreCuenta(id){
+  const c = state.cuentas.find(x=>x.id===id);
+  return c? c.nombre : "(?)";
+}
 
+// ===== Actions =====
 function addMoneda(){
   const code = $("monCode").value.trim().toUpperCase();
   const name = $("monName").value.trim();
@@ -108,11 +160,10 @@ function addMoneda(){
   if(!code || !name) return alert("Completá código y nombre.");
   if(state.monedas.some(m=>m.code===code)) return alert("Ya existe esa moneda.");
   state.monedas.push({code, name, isCrypto, rate});
-  saveVault().then(renderMonedas);
+  saveVault().then(()=>{ renderMonedas(); });
   $("monCode").value=""; $("monName").value=""; $("monRate").value="";
   $("monIsCrypto").value="No";
 }
-
 function addCuenta(){
   const nombre = $("ctaNombre").value.trim();
   const tipo = $("ctaTipo").value;
@@ -124,16 +175,30 @@ function addCuenta(){
   if(multi && subMonedas.length===0) return alert("Indicá subcuentas de moneda (ej. ARS,USD)");
   const id = `cta_${Date.now()}`;
   state.cuentas.push({id, nombre, tipo, multi, incluyeCaja, moneda: multi? null: moneda, subMonedas: multi? subMonedas: []});
-  saveVault().then(renderCuentas);
+  saveVault().then(()=>{ renderCuentas(); });
   $("ctaNombre").value=""; $("ctaSubMonedas").value="";
 }
+function addMovimiento(){
+  const fecha = $("movFecha").value || todayISO();
+  const desc = $("movDesc").value.trim();
+  const monto = Number($("movMonto").value);
+  const moneda = $("movMoneda").value;
+  const deb = $("movDeb").value;
+  const cred = $("movCred").value;
+  const cat = $("movCat").value.trim();
+  const tag = $("movTag").value.trim();
 
-function switchTab(id){
-  ["tab-cuentas","tab-monedas","tab-export"].forEach(t=>{
-    document.getElementById(t).style.display = (t===id)?"block":"none";
+  if(!desc) return alert("Descripción requerida.");
+  if(!monto || monto<=0) return alert("Monto inválido.");
+  if(!deb || !cred) return alert("Seleccioná cuentas débito y crédito.");
+  if(deb === cred) return alert("Las cuentas no pueden ser iguales.");
+
+  state.movs.push({id:`mov_${Date.now()}`, fecha, desc, monto, moneda, deb, cred, cat, tag});
+  saveVault().then(()=>{ 
+    renderMovs();
+    $("movDesc").value=""; $("movMonto").value=""; $("movCat").value=""; $("movTag").value="";
   });
 }
-
 async function exportVault(){
   await saveVault();
   const blob = new Blob([localStorage.getItem(LS_KEY)], {type:"application/json"});
@@ -147,27 +212,55 @@ async function exportVault(){
 function importVault(){
   $("fileImport").click();
 }
-$("fileImport").addEventListener("change", async (e)=>{
-  const file = e.target.files[0];
-  if(!file) return;
-  const text = await file.text();
-  try{
-    const pack = JSON.parse(text);
-    // prueba de descifrado antes de guardar
-    await decryptJson(pack, currentPin);
-    localStorage.setItem(LS_KEY, text);
-    await loadVault(state.user.id, currentPin);
-    renderMonedas(); renderCuentas();
-    alert("Importado OK");
-  }catch(err){
-    console.error(err);
-    alert("No se pudo importar (PIN/archivo incorrecto).");
-  }finally{
-    e.target.value = "";
-  }
-});
 
-// ===== Auth y UI inicial =====
+// ===== Auth y wiring =====
+function switchTab(id){
+  ["tab-cuentas","tab-monedas","tab-mov","tab-export"].forEach(t=>{
+    const el = document.getElementById(t);
+    if(el) el.style.display = (t===id)?"block":"none";
+  });
+}
+function wireEvents(){
+  // Tabs
+  document.querySelectorAll("nav button").forEach(b=>{
+    b.addEventListener("click", ()=>switchTab(b.dataset.tab));
+  });
+  // Botones
+  const map = [
+    ["btnAddMoneda", addMoneda],
+    ["btnAddCuenta", addCuenta],
+    ["btnAddMov", addMovimiento],
+    ["btnExport", exportVault],
+    ["btnImport", importVault],
+  ];
+  map.forEach(([id,fn])=>{
+    const el = $(id); if(el) el.onclick = fn;
+  });
+  // Import input
+  const fi = $("fileImport");
+  if(fi){
+    fi.addEventListener("change", async (e)=>{
+      const file = e.target.files[0];
+      if(!file) return;
+      const text = await file.text();
+      try{
+        const pack = JSON.parse(text);
+        // prueba de descifrado antes de guardar
+        await decryptJson(pack, currentPin);
+        localStorage.setItem(LS_KEY, text);
+        await loadVault(state.user.id, currentPin);
+        renderMonedas(); renderCuentas(); renderMovs();
+        alert("Importado OK");
+      }catch(err){
+        console.error(err);
+        alert("No se pudo importar (PIN/archivo incorrecto).");
+      }finally{
+        e.target.value = "";
+      }
+    });
+  }
+}
+
 $("btnUnlock").onclick = async ()=>{
   const uid = $("userId").value.trim();
   const pin = $("pin").value.trim();
@@ -176,8 +269,16 @@ $("btnUnlock").onclick = async ()=>{
   if(!ok) return alert("PIN o usuario inválido.");
   $("authCard").style.display = "none";
   $("app").style.display = "block";
-  renderMonedas(); renderCuentas();
+
+  // Valores por defecto
+  $("movFecha").value = todayISO();
+
+  // Primer render
+  renderMonedas(); renderCuentas(); renderMovs();
+  // Wire
+  wireEvents();
 };
+
 $("btnReset").onclick = ()=>{
   if(confirm("Esto borra todos los datos locales. ¿Continuar?")){
     localStorage.removeItem(LS_KEY);
@@ -186,8 +287,3 @@ $("btnReset").onclick = ()=>{
     location.reload();
   }
 };
-
-// Tabs
-document.querySelectorAll("nav button").forEach(b=>{
-  b.addEventListener("click", ()=>switchTab(b.dataset.tab));
-});
