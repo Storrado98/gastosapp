@@ -1,12 +1,143 @@
 <!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>GastosApp</title>
-  </head>
-  <body>
-    <h1>GastosApp</h1>
-    <p>¡Hola! El hosting quedó OK. Próximo paso: subir la app.</p>
-  </body>
+<html lang="es">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>GastosApp</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#0f172a">
+  <style>
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Helvetica,Arial,sans-serif;margin:0;background:#0b1220;color:#e5e7eb}
+    header{padding:12px 16px;background:#111827;border-bottom:1px solid #1f2937}
+    h1{margin:0;font-size:18px}
+    main{max-width:900px;margin:0 auto;padding:16px}
+    .card{background:#111827;border:1px solid #1f2937;border-radius:14px;padding:16px;margin:12px 0}
+    label{display:block;margin:8px 0 4px}
+    input,select,button,textarea{background:#0b1220;color:#e5e7eb;border:1px solid #374151;border-radius:10px;padding:10px;width:100%}
+    button{cursor:pointer}
+    .row{display:grid;gap:12px}
+    @media(min-width:720px){.row{grid-template-columns:1fr 1fr}}
+    .small{font-size:12px;color:#9ca3af}
+    nav{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+    nav button{width:auto;padding:8px 12px;border-radius:999px;border-color:#334155}
+    .pill{display:inline-block;padding:3px 8px;border:1px solid #334155;border-radius:999px;margin:4px 6px 0 0;font-size:12px}
+    .ok{background:#16a34a;border-color:#16a34a}
+    .warn{background:#a16207;border-color:#a16207}
+  </style>
+</head>
+<body>
+<header>
+  <h1>GastosApp — MVP</h1>
+</header>
+<main>
+  <div class="card" id="authCard">
+    <h2>Bloqueo por Usuario ID + PIN</h2>
+    <div class="row">
+      <div>
+        <label>Usuario ID</label>
+        <input id="userId" placeholder="p.ej. storrado"/>
+      </div>
+      <div>
+        <label>PIN (4 dígitos)</label>
+        <input id="pin" type="password" inputmode="numeric" maxlength="4" placeholder="****"/>
+      </div>
+    </div>
+    <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+      <button id="btnUnlock">Entrar</button>
+      <button id="btnReset">Reiniciar (limpiar datos)</button>
+    </div>
+    <p class="small">Los datos se cifran localmente con tu PIN. Si lo olvidás, no se puede recuperar.</p>
+  </div>
+
+  <div id="app" style="display:none">
+    <div class="card">
+      <nav>
+        <button data-tab="tab-cuentas">Cuentas</button>
+        <button data-tab="tab-monedas">Monedas</button>
+        <button data-tab="tab-export">Exportar/Importar</button>
+      </nav>
+      <div id="tab-cuentas">
+        <h2>Cuentas</h2>
+        <div class="row">
+          <div>
+            <label>Nombre</label>
+            <input id="ctaNombre" placeholder="Galicia, Ualá, Mercado Pago, ..."/>
+          </div>
+          <div>
+            <label>Tipo</label>
+            <select id="ctaTipo">
+              <option>Banco</option><option>Caja</option><option>Tarjeta</option>
+              <option>Provisión</option><option>Inversión</option><option>Cripto</option>
+              <option>Plazo Fijo</option><option>Otros</option>
+            </select>
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label>¿Multi-moneda?</label>
+            <select id="ctaMulti"><option>No</option><option>Sí</option></select>
+          </div>
+          <div>
+            <label>Incluir en Caja disponible</label>
+            <select id="ctaIncluyeCaja"><option>Sí</option><option>No</option></select>
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label>Moneda principal (si no multi)</label>
+            <select id="ctaMoneda"></select>
+          </div>
+          <div>
+            <label>Subcuentas (si multi) — separadas por coma, usando códigos de moneda</label>
+            <input id="ctaSubMonedas" placeholder="ARS,USD,BTC"/>
+          </div>
+        </div>
+        <button id="btnAddCuenta">Agregar cuenta</button>
+        <div id="listaCuentas" style="margin-top:10px"></div>
+      </div>
+
+      <div id="tab-monedas" style="display:none">
+        <h2>Monedas</h2>
+        <div class="row">
+          <div>
+            <label>Código</label>
+            <input id="monCode" placeholder="ARS, USD, BTC, ETH, DOGE"/>
+          </div>
+          <div>
+            <label>Nombre</label>
+            <input id="monName" placeholder="Pesos, Dólares, Bitcoin..."/>
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label>¿Cuenta como “Cripto” para %?</label>
+            <select id="monIsCrypto"><option>No</option><option>Sí</option></select>
+          </div>
+          <div>
+            <label>T/C ARS de hoy (opcional)</label>
+            <input id="monRate" type="number" step="0.0001" placeholder="ej. 1, 1200, ..."/>
+          </div>
+        </div>
+        <button id="btnAddMoneda">Agregar moneda</button>
+        <div id="listaMonedas" style="margin-top:10px"></div>
+      </div>
+
+      <div id="tab-export" style="display:none">
+        <h2>Exportar / Importar</h2>
+        <p>Exportá tu base cifrada y llevála a otro dispositivo. Para “sincronizar”, exportá donde editaste por última vez e importá en el otro.</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button id="btnExport">Exportar vault</button>
+          <input type="file" id="fileImport" style="display:none" accept=".gastosapp"/>
+          <button id="btnImport">Importar vault</button>
+        </div>
+        <p id="exportInfo" class="small"></p>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="src/app.js"></script>
+  <script>
+    if('serviceWorker' in navigator){navigator.serviceWorker.register('./service-worker.js');}
+  </script>
+</main>
+</body>
 </html>
