@@ -1,4 +1,4 @@
-const CACHE = "gastosapp-v4";
+const CACHE = "gastosapp-v5";
 const ASSETS = [
   "./",
   "./index.html",
