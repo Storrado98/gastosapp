@@ -1,73 +1,34 @@
-<!doctype html>
-<html lang="es">
-<head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>GastosApp</title>
-  <link rel="manifest" href="manifest.webmanifest">
-  <meta name="theme-color" content="#0f172a">
-  <style>
-    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Helvetica,Arial,sans-serif;margin:0;background:#0b1220;color:#e5e7eb}
-    header{padding:12px 16px;background:#111827;border-bottom:1px solid #1f2937}
-    h1{margin:0;font-size:18px}
-    main{max-width:980px;margin:0 auto;padding:16px}
-    .card{background:#111827;border:1px solid #1f2937;border-radius:14px;padding:16px;margin:12px 0}
-    label{display:block;margin:8px 0 4px}
-    input,select,button,textarea{background:#0b1220;color:#e5e7eb;border:1px solid #374151;border-radius:10px;padding:10px;width:100%}
-    button{cursor:pointer}
-    .row{display:grid;gap:12px}
-    @media(min-width:720px){.row{grid-template-columns:1fr 1fr}}
-    .small{font-size:12px;color:#9ca3af}
-    nav{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}
-    nav button{width:auto;padding:8px 12px;border-radius:999px;border-color:#334155}
-    .pill{display:inline-block;padding:3px 8px;border:1px solid #334155;border-radius:999px;margin:4px 6px 0 0;font-size:12px}
-    .ok{background:#16a34a;border-color:#16a34a}
-    .warn{background:#a16207;border-color:#a16207}
-    .list-item{padding:8px 10px;border:1px solid #1f2937;border-radius:10px;margin-top:8px}
-    .muted{color:#9ca3af}
-  </style>
-</head>
+<!-- … head igual … -->
 <body>
-<header>
-  <h1>GastosApp — MVP</h1>
-</header>
+<header><h1>GastosApp — MVP</h1></header>
 <main>
   <div class="card" id="authCard">
     <h2>Bloqueo por Usuario ID + PIN</h2>
     <div class="row">
-      <div>
-        <label>Usuario ID</label>
-        <input id="userId" placeholder="p.ej. storrado"/>
-      </div>
-      <div>
-        <label>PIN (4 dígitos)</label>
-        <input id="pin" type="password" inputmode="numeric" maxlength="4" placeholder="****"/>
-      </div>
+      <div><label>Usuario ID</label><input id="userId" placeholder="p.ej. storrado"/></div>
+      <div><label>PIN (4 dígitos)</label><input id="pin" type="password" inputmode="numeric" maxlength="4" placeholder="****"/></div>
     </div>
     <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
-      <button id="btnUnlock">Entrar</button>
-      <button id="btnReset">Reiniciar (limpiar datos)</button>
+      <button id="btnUnlock" type="button">Entrar</button>
+      <button id="btnReset" type="button">Reiniciar (limpiar datos)</button>
     </div>
-    <p class="small">Los datos se cifran localmente con tu PIN. Si lo olvidás, no se puede recuperar.</p>
+    <p class="small">Los datos se cifran localmente con tu PIN.</p>
   </div>
 
   <div id="app" style="display:none">
     <div class="card">
       <nav>
-        <button data-tab="tab-cuentas">Cuentas</button>
-        <button data-tab="tab-monedas">Monedas</button>
-        <button data-tab="tab-mov">Movimientos</button>
-        <button data-tab="tab-export">Exportar/Importar</button>
+        <button data-tab="tab-cuentas" id="tabBtnCtas" type="button">Cuentas</button>
+        <button data-tab="tab-monedas" id="tabBtnMon" type="button">Monedas</button>
+        <button data-tab="tab-mov" id="tabBtnMov" type="button">Movimientos</button>
+        <button data-tab="tab-export" id="tabBtnExp" type="button">Exportar/Importar</button>
       </nav>
 
       <!-- CUENTAS -->
       <div id="tab-cuentas">
         <h2>Cuentas</h2>
         <div class="row">
-          <div>
-            <label>Nombre</label>
-            <input id="ctaNombre" placeholder="Galicia, Ualá, Mercado Pago, ..."/>
-          </div>
+          <div><label>Nombre</label><input id="ctaNombre" /></div>
           <div>
             <label>Tipo</label>
             <select id="ctaTipo">
@@ -78,26 +39,14 @@
           </div>
         </div>
         <div class="row">
-          <div>
-            <label>¿Multi-moneda?</label>
-            <select id="ctaMulti"><option>No</option><option>Sí</option></select>
-          </div>
-          <div>
-            <label>Incluir en Caja disponible</label>
-            <select id="ctaIncluyeCaja"><option>Sí</option><option>No</option></select>
-          </div>
+          <div><label>¿Multi-moneda?</label><select id="ctaMulti"><option>No</option><option>Sí</option></select></div>
+          <div><label>Incluir en Caja disponible</label><select id="ctaIncluyeCaja"><option>Sí</option><option>No</option></select></div>
         </div>
         <div class="row">
-          <div>
-            <label>Moneda principal (si no multi)</label>
-            <select id="ctaMoneda"></select>
-          </div>
-          <div>
-            <label>Subcuentas (si multi) — separadas por coma, usando códigos de moneda</label>
-            <input id="ctaSubMonedas" placeholder="ARS,USD,BTC"/>
-          </div>
+          <div><label>Moneda principal</label><select id="ctaMoneda"></select></div>
+          <div><label>Subcuentas (si multi)</label><input id="ctaSubMonedas" placeholder="ARS,USD,BTC"/></div>
         </div>
-        <button id="btnAddCuenta">Agregar cuenta</button>
+        <button id="btnAddCuenta" type="button">Agregar cuenta</button>
         <div id="listaCuentas" style="margin-top:10px"></div>
       </div>
 
@@ -105,26 +54,14 @@
       <div id="tab-monedas" style="display:none">
         <h2>Monedas</h2>
         <div class="row">
-          <div>
-            <label>Código</label>
-            <input id="monCode" placeholder="ARS, USD, BTC, ETH, DOGE"/>
-          </div>
-          <div>
-            <label>Nombre</label>
-            <input id="monName" placeholder="Pesos, Dólares, Bitcoin..."/>
-          </div>
+          <div><label>Código</label><input id="monCode" placeholder="ARS, USD, BTC"/></div>
+          <div><label>Nombre</label><input id="monName" placeholder="Pesos, Dólares…"/></div>
         </div>
         <div class="row">
-          <div>
-            <label>¿Cuenta como “Cripto” para %?</label>
-            <select id="monIsCrypto"><option>No</option><option>Sí</option></select>
-          </div>
-          <div>
-            <label>T/C ARS de hoy (opcional)</label>
-            <input id="monRate" type="number" step="0.0001" placeholder="ej. 1, 1200, ..."/>
-          </div>
+          <div><label>¿Cuenta como “Cripto”?</label><select id="monIsCrypto"><option>No</option><option>Sí</option></select></div>
+          <div><label>T/C ARS de hoy (opcional)</label><input id="monRate" type="number" step="0.0001"/></div>
         </div>
-        <button id="btnAddMoneda">Agregar moneda</button>
+        <button id="btnAddMoneda" type="button">Agregar moneda</button>
         <div id="listaMonedas" style="margin-top:10px"></div>
       </div>
 
@@ -132,47 +69,22 @@
       <div id="tab-mov" style="display:none">
         <h2>Movimientos (doble partida)</h2>
         <div class="row">
-          <div>
-            <label>Fecha</label>
-            <input id="movFecha" type="date"/>
-          </div>
-          <div>
-            <label>Moneda</label>
-            <select id="movMoneda"></select>
-          </div>
+          <div><label>Fecha</label><input id="movFecha" type="date"/></div>
+          <div><label>Moneda</label><select id="movMoneda"></select></div>
         </div>
         <div class="row">
-          <div>
-            <label>Descripción</label>
-            <input id="movDesc" placeholder="Café, combustible, sueldo, pago TC..."/>
-          </div>
-          <div>
-            <label>Monto</label>
-            <input id="movMonto" type="number" step="0.01" placeholder="ej. 1000"/>
-          </div>
+          <div><label>Descripción</label><input id="movDesc"/></div>
+          <div><label>Monto</label><input id="movMonto" type="number" step="0.01"/></div>
         </div>
         <div class="row">
-          <div>
-            <label>Cuenta (sale / débito)</label>
-            <select id="movDeb"></select>
-          </div>
-          <div>
-            <label>Cuenta (entra / crédito)</label>
-            <select id="movCred"></select>
-          </div>
+          <div><label>Cuenta (sale / débito)</label><select id="movDeb"></select></div>
+          <div><label>Cuenta (entra / crédito)</label><select id="movCred"></select></div>
         </div>
         <div class="row">
-          <div>
-            <label>Categoría</label>
-            <input id="movCat" placeholder="Gasto, Provisión, Sueldo, Intereses..."/>
-          </div>
-          <div>
-            <label>Etiqueta</label>
-            <input id="movTag" placeholder="opcional"/>
-          </div>
+          <div><label>Categoría</label><input id="movCat"/></div>
+          <div><label>Etiqueta</label><input id="movTag"/></div>
         </div>
-        <button id="btnAddMov">Agregar movimiento</button>
-
+        <button id="btnAddMov" type="button">Agregar movimiento</button>
         <h3 style="margin-top:16px">Últimos movimientos</h3>
         <div id="listaMovs" class="small muted">(vacío)</div>
       </div>
@@ -180,11 +92,11 @@
       <!-- EXPORT / IMPORT -->
       <div id="tab-export" style="display:none">
         <h2>Exportar / Importar</h2>
-        <p>Exportá tu base cifrada y llevála a otro dispositivo. Para “sincronizar”, exportá donde editaste por última vez e importá en el otro.</p>
+        <p>Exportá tu base cifrada y llevála a otro dispositivo.</p>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button id="btnExport">Exportar vault</button>
+          <button id="btnExport" type="button">Exportar vault</button>
           <input type="file" id="fileImport" style="display:none" accept=".gastosapp"/>
-          <button id="btnImport">Importar vault</button>
+          <button id="btnImport" type="button">Importar vault</button>
         </div>
         <p id="exportInfo" class="small"></p>
       </div>
@@ -192,9 +104,7 @@
   </div>
 
   <script type="module" src="src/app.js"></script>
-  <script>
-    if('serviceWorker' in navigator){navigator.serviceWorker.register('./service-worker.js');}
-  </script>
+  <script> if('serviceWorker' in navigator){navigator.serviceWorker.register('./service-worker.js');} </script>
 </main>
 </body>
 </html>
