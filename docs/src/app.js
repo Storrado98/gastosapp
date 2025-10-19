@@ -30,7 +30,7 @@ async function decryptJson(pack, pin){
 const LAST_USER_KEY = "gastosapp_last_user";
 const vaultKeyFor = (userId) => `gastosapp_vault_${userId}`;
 const defaultState = (userId) => ({
-  meta: {createdAt: new Date().toISOString(), version: 3},
+  meta: {createdAt: new Date().toISOString(), version: 4},
   user: {id: userId, pinSet: true},
   monedas: [
     {code:"ARS", name:"Pesos", isCrypto:false, rate:1},
@@ -39,8 +39,8 @@ const defaultState = (userId) => ({
     {code:"ETH", name:"Ethereum", isCrypto:true, rate:null},
     {code:"DOGE", name:"Dogecoin", isCrypto:true, rate:null},
   ],
-  cuentas: [],
-  movs: []
+  cuentas: [], // {id,nombre,tipo,multi,incluyeCaja,moneda,subMonedas[],saldoIni,fechaIni}
+  movs: []     // {id, fecha, desc, monto, moneda, deb, cred, cat, tag}
 });
 let state = null;
 let currentPin = null;
@@ -50,8 +50,9 @@ let currentUser = null;
 const $ = (id)=>document.getElementById(id);
 const ts = ()=> new Date().toISOString().replace(/[:.]/g,"-");
 const todayISO = ()=>{ const d=new Date(); d.setHours(0,0,0,0); return d.toISOString().slice(0,10); };
+const toISO = (d)=> d.toISOString().slice(0,10);
 
-// ========= VAULT LOAD/SAVE (por usuario) =========
+// ========= VAULT LOAD/SAVE =========
 async function loadVault(userId, pin){
   const key = vaultKeyFor(userId);
   const raw = localStorage.getItem(key);
@@ -81,7 +82,7 @@ async function saveVault(){
 
 // ========= RENDER =========
 function renderMonedas(){
-  const list = $("listaMonedas"); if(list){ list.innerHTML = ""; }
+  const list = $("listaMonedas"); if(list) list.innerHTML = "";
   state.monedas.forEach(m=>{
     if(list){
       const el = document.createElement("div");
@@ -90,19 +91,19 @@ function renderMonedas(){
       list.appendChild(el);
     }
   });
-  // selects
   const selMonCta = $("ctaMoneda");
   if(selMonCta){ selMonCta.innerHTML=""; state.monedas.forEach(m=>{ const o=document.createElement("option"); o.value=m.code; o.textContent=m.code; selMonCta.appendChild(o); }); }
   const selMonMov = $("movMoneda");
   if(selMonMov){ selMonMov.innerHTML=""; state.monedas.forEach(m=>{ const o=document.createElement("option"); o.value=m.code; o.textContent=m.code; selMonMov.appendChild(o); }); }
 }
 function renderCuentas(){
-  const list = $("listaCuentas"); if(list){ list.innerHTML=""; }
+  const list = $("listaCuentas"); if(list) list.innerHTML="";
   state.cuentas.forEach(c=>{
     if(list){
       const el = document.createElement("div");
       el.className = "pill";
-      el.textContent = `${c.nombre} · ${c.tipo} · ${c.multi?`multi: ${c.subMonedas.join(",")}`:c.moneda} · ${c.incluyeCaja?"incluye caja":"no caja"}`;
+      const si = (c.saldoIni!=null && c.fechaIni)? ` · SI:${c.saldoIni} ${c.moneda||""} @${c.fechaIni}` : "";
+      el.textContent = `${c.nombre} · ${c.tipo} · ${c.multi?`multi: ${c.subMonedas.join(",")}`:c.moneda}${si} · ${c.incluyeCaja?"incluye caja":"no caja"}`;
       list.appendChild(el);
     }
   });
@@ -155,12 +156,21 @@ function addCuenta(){
   const incluyeCaja = $("ctaIncluyeCaja").value==="Sí";
   const moneda = $("ctaMoneda").value || "ARS";
   const subMonedas = $("ctaSubMonedas").value.split(",").map(s=>s.trim().toUpperCase()).filter(Boolean);
+  const saldoIni = $("ctaSaldoIni").value ? Number($("ctaSaldoIni").value) : null;
+  const fechaIni = $("ctaFechaIni").value || null;
   if(!nombre) return alert("Poné un nombre de cuenta.");
   if(multi && subMonedas.length===0) return alert("Indicá subcuentas de moneda (ej. ARS,USD)");
+  if(saldoIni!=null && !fechaIni) return alert("Indicá la fecha del saldo inicial.");
   const id = `cta_${Date.now()}`;
-  state.cuentas.push({id, nombre, tipo, multi, incluyeCaja, moneda: multi? null: moneda, subMonedas: multi? subMonedas: []});
+  state.cuentas.push({
+    id, nombre, tipo, multi, incluyeCaja,
+    moneda: multi? null: moneda,
+    subMonedas: multi? subMonedas: [],
+    saldoIni: multi? saldoIni : saldoIni, // (MVP: un SI general)
+    fechaIni
+  });
   saveVault().then(()=>{ renderCuentas(); });
-  $("ctaNombre").value=""; $("ctaSubMonedas").value="";
+  $("ctaNombre").value=""; $("ctaSubMonedas").value=""; $("ctaSaldoIni").value=""; $("ctaFechaIni").value="";
 }
 function addMovimiento(){
   const fecha = $("movFecha").value || todayISO();
@@ -179,19 +189,99 @@ function addMovimiento(){
   saveVault().then(()=>{ renderMovs(); $("movDesc").value=""; $("movMonto").value=""; $("movCat").value=""; $("movTag").value=""; });
 }
 
+// ========= CALENDARIO =========
+// Construye saldos diarios por cuenta desde su saldo inicial, aplicando movimientos que coinciden en MONEDA y en el rango.
+function buildCalendar(startISO, days){
+  // armar arreglo de fechas
+  const start = new Date(startISO);
+  start.setHours(0,0,0,0);
+  const dates = Array.from({length:days}, (_,i)=>{ const d=new Date(start); d.setDate(d.getDate()+i); return toISO(d); });
+
+  // mapa cuentas -> saldos por día
+  const rows = state.cuentas.map(c=>{
+    // saldo inicial y fecha base
+    const si = (c.saldoIni!=null) ? Number(c.saldoIni) : 0;
+    const fi = c.fechaIni || dates[0];
+    // sólo tomamos moneda de cuenta si es mono; si es multi, usamos la "moneda principal" (MVP)
+    const mon = c.multi ? (c.subMonedas[0] || "ARS") : (c.moneda || "ARS");
+
+    // base: desde fechaIni hasta fin, inicializamos con SI en fi y “carry-forward”
+    const balanceByDate = new Map();
+    // prellenar con 0 hasta fi-1
+    dates.forEach(d=>balanceByDate.set(d, 0));
+    // aplicar SI desde fi
+    let running = 0;
+    dates.forEach(d=>{
+      if(d < fi){ balanceByDate.set(d, 0); }
+      else if(d === fi){ running = si; balanceByDate.set(d, running); }
+      else{ balanceByDate.set(d, running); }
+    });
+
+    // aplicar movimientos por fecha/moneda
+    const relevantMovs = state.movs.filter(m=> m.moneda===mon && m.fecha>=dates[0] && m.fecha<=dates[dates.length-1] && (m.deb===c.id || m.cred===c.id));
+    // acumulamos por fecha
+    const byDay = {};
+    relevantMovs.forEach(m=>{
+      const delta = (m.cred===c.id ? +m.monto : (m.deb===c.id ? -m.monto : 0));
+      byDay[m.fecha] = (byDay[m.fecha]||0) + delta;
+    });
+
+    // recorre fechas y suma cambios
+    running = balanceByDate.get(dates[0]);
+    dates.forEach((d,idx)=>{
+      if(idx===0){
+        // si primera fecha < fi, queda 0, si igual o mayor ya seteado arriba
+      }else{
+        running = balanceByDate.get(dates[idx-1]);
+      }
+      const change = byDay[d]||0;
+      const newBal = ( (d < fi) ? 0 : running ) + ((d < fi) ? 0 : change);
+      balanceByDate.set(d, newBal);
+    });
+
+    return {
+      cuentaId: c.id,
+      nombre: c.nombre + (c.multi? ` (${mon})` : (c.moneda? ` (${c.moneda})`:"")),
+      moneda: mon,
+      series: dates.map(d=> balanceByDate.get(d))
+    };
+  });
+
+  return {dates, rows};
+}
+function renderCalendar(){
+  const start = $("calInicio").value || todayISO();
+  const days = Number($("calRango").value || "30");
+  const {dates, rows} = buildCalendar(start, days);
+  const tbl = $("calTabla");
+  if(!tbl) return;
+  // header
+  let html = "<thead><tr><th>Cuenta</th>";
+  dates.forEach(d=> html += `<th>${d}</th>`);
+  html += "</tr></thead><tbody>";
+  // rows
+  rows.forEach(r=>{
+    html += `<tr><td>${r.nombre}</td>`;
+    r.series.forEach(v=> html += `<td>${(v!=null)? v.toLocaleString(): ""}</td>`);
+    html += "</tr>";
+  });
+  html += "</tbody>";
+  tbl.innerHTML = html;
+}
+
 // ========= TABS & WIRING =========
 function switchTab(id){
-  ["tab-cuentas","tab-monedas","tab-mov","tab-export"].forEach(t=>{
+  ["tab-cuentas","tab-monedas","tab-mov","tab-cal","tab-export"].forEach(t=>{
     const el = document.getElementById(t);
     if(el) el.style.display = (t===id)?"block":"none";
   });
 }
 function wireEventsOnce(){
   // tabs
-  [["tabBtnCtas","tab-cuentas"],["tabBtnMon","tab-monedas"],["tabBtnMov","tab-mov"],["tabBtnExp","tab-export"]]
+  [["tabBtnCtas","tab-cuentas"],["tabBtnMon","tab-monedas"],["tabBtnMov","tab-mov"],["tabBtnCal","tab-cal"],["tabBtnExp","tab-export"]]
     .forEach(([btn,tab])=>{ const b=$(btn); if(b) b.addEventListener("click", ()=>switchTab(tab)); });
   // acciones
-  [["btnAddMoneda",addMoneda],["btnAddCuenta",addCuenta],["btnAddMov",addMovimiento],["btnExport",exportVault],["btnImport",importVault]]
+  [["btnAddMoneda",addMoneda],["btnAddCuenta",addCuenta],["btnAddMov",addMovimiento],["btnExport",exportVault],["btnImport",importVault],["btnCalcular",renderCalendar]]
     .forEach(([id,fn])=>{ const el=$(id); if(el) el.addEventListener("click", fn); });
   // import input
   const fi = $("fileImport");
@@ -204,7 +294,7 @@ function wireEventsOnce(){
         await decryptJson(pack, currentPin); // test
         localStorage.setItem(vaultKeyFor(currentUser), text);
         await loadVault(currentUser, currentPin);
-        renderMonedas(); renderCuentas(); renderMovs();
+        renderMonedas(); renderCuentas(); renderMovs(); renderCalendar();
         alert("Importado OK");
       }catch(err){ console.error(err); alert("No se pudo importar (PIN/archivo incorrecto)."); }
       finally{ e.target.value=""; }
@@ -231,8 +321,9 @@ $("btnUnlock").addEventListener("click", async ()=>{
   $("authCard").style.display = "none";
   $("app").style.display = "block";
   $("movFecha").value = todayISO();
+  $("calInicio").value = todayISO();
   wireEventsOnce();
-  renderMonedas(); renderCuentas(); renderMovs();
+  renderMonedas(); renderCuentas(); renderMovs(); renderCalendar();
 });
 $("btnReset").addEventListener("click", ()=>{
   if(confirm("Esto borra los datos locales del usuario actual. ¿Continuar?")){
